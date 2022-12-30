@@ -1,5 +1,7 @@
 # DockerPhoenixTailwind
 
+![Phoenix Application](https://github.com/manjufy/docker_phoenix_tailwind/blob/main/screens/project-screen.png)
+
 To start your Phoenix server:
 
   * Install dependencies with `mix deps.get`
