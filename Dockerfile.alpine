@@ -1,18 +1,12 @@
+## Runs with alpine image
+## You can build this image docker image build -t elixir/portal . -f Dockerfile.alpine
 ################################################################################
 # STEP 1 - Docker image stage for building the release
-ARG ELIXIR_VERSION=1.14.2
-ARG OTP_VERSION=25.1.2
-ARG DEBIAN_VERSION=bullseye-20221004-slim
-ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
-ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
-
 ARG MIX_ENV="prod"
-
-FROM ${BUILDER_IMAGE}  AS builder
+FROM hexpm/elixir:1.14.2-erlang-25.1-alpine-3.17.0  AS build
 
 # Install build dependencies
-RUN apt-get update -y && apt-get install -y build-essential git \
-    && apt-get clean && rm -f /var/lib/apt/lists/*_*
+RUN apk add --no-cache build-base git python3 curl
 
 # Sets work directory
 WORKDIR /app
@@ -24,13 +18,13 @@ RUN mix local.hex --force && \
 ARG MIX_ENV
 ENV MIX_ENV="${MIX_ENV}"
 
-# Install mix dependencies
 COPY mix.exs mix.lock ./
-RUN mix deps.get --only ${MIX_ENV}
+
+RUN mix deps.get --only $MIX_ENV
 
 # Copy compile configuration files
 RUN mkdir config
-COPY config/config.exs config/$MIX_ENV.exs config/
+COPY config/config.exs config/"${MIX_ENV}".exs config/
 
 # Compile dependencies
 RUN mix deps.compile
@@ -61,22 +55,13 @@ RUN mix release
 
 ################################################################################
 # STEP 2 - Docker image stage for running the release
-# start a new build stage so that the final image will only contain
-# the compiled release and other runtime necessities
-FROM ${RUNNER_IMAGE}
+FROM alpine:3.17.0 AS app
 
 ARG MIX_ENV
-ENV MIX_ENV="${MIX_ENV}"
+#ENV SECRET_KEY_BASE="$(mix phx.gen.secret)"
 
-RUN apt-get update -y && apt-get install -y libstdc++6 openssl libncurses5 locales \
-  && apt-get clean && rm -f /var/lib/apt/lists/*_*
-
-# Set the locale
-RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
-
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
+# Install runtime dependencies
+RUN apk add --no-cache libstdc++ openssl ncurses-libs
 
 ENV USER="manju"
 
@@ -84,14 +69,20 @@ WORKDIR "/home/${USER}/app"
 
 # Create unprivileged user to run the release
 RUN \
-addgroup --system "${USER}" \
-&& adduser --system ${USER}
+addgroup -g 1000 -S "${USER}" \
+&& adduser \
+-s /bin/sh \
+-u 1000 \
+-G "${USER}" \
+-h "/home/${USER}" \
+-D "${USER}" \
+&& su "${USER}"
 
 # run as user
 USER "${USER}"
 
 # copy release executable
-COPY --from=builder --chown="${USER}":"${USER}" /app/_build/"${MIX_ENV}"/rel/docker_phoenix_tailwind ./
+COPY --from=build --chown="${USER}":"${USER}" /app/_build/"${MIX_ENV}"/rel/docker_phoenix_tailwind ./
 
 ENTRYPOINT ["bin/docker_phoenix_tailwind"]
 
